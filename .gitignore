@@ -1,0 +1,23 @@
+# Local development scratch files:
+.scratch/
+
+# Solar2D & tools:
+.CoronaLiveBuild
+.vscode
+*.tiled-session
+
+# Per-developer launch parameters of the game template:
+launchParams.json
+
+# Hidden temporary files, e.g. MS Office.
+~*.tmp
+~$*
+
+# OS files:
+Thumbs.db
+._*
+*.ini
+.DS_Store
+.DS_Store?
+.Spotlight-V100
+.Trashes

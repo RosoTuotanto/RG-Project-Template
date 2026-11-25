@@ -1,0 +1,12 @@
+name: Muu
+description: Käytetään kaikkeen muuhun, mikä ei sovi muihin kategorioihin
+labels: [muu]
+type: Muu
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Kuvaus
+      description: Kerro omin sanoin, mistä on kyse. Jos tiedät jo, kenelle asia kuuluu, niin voit lisätä hänet Assignees-kohdasta.
+    validations:
+      required: true

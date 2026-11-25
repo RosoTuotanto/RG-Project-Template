@@ -1,0 +1,21 @@
+name: Peli-idea
+description: Uusi peli-idea ehdotus
+title: "Peli-idea: [kirjoita pelisi nimi]"
+labels: [muu]
+type: Muu
+body:
+  - type: input
+    id: sales_pitch
+    attributes:
+      label: Myyntipuhe
+      description: "Tiivistä peli-ideasi yhteen lauseeseen, joka saa kuulijan innostumaan. Otsikkoon sinun ei tarvitse kirjoittaa pelin lopullista nimeä, projektinimi riittää."
+    validations:
+      required: true
+
+  - type: input
+    id: pitch_link
+    attributes:
+      label: Linkki Pitch-dokumenttiin
+      description: "Liitä tähän Pitch-dokumenttisi jakolinkki (Google Docs tai Google Slides). Tarkista jakoasetuksista, että kuka tahansa linkin saanut voi katsoa dokumenttia. Kun olet lisännyt tämän tehtävän, saat esittää peli-ideasi. Hienoa!"
+    validations:
+      required: true

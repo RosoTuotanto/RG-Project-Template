@@ -1,0 +1,34 @@
+name: Bug
+description: Raportoi bugi, virhe tai ongelma
+labels: [bug]
+type: Bug
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Bugin kuvaus
+      description: "Kerro lyhyesti, mitä tapahtui. Kentässä valmiina olevat otsikot ja kysymykset ovat siinä vain kirjoittamisen avuksi. Mitään niistä ei ole pakko täyttää. Voit muokata niitä tai poistaa ne kokonaan. Jos tiedät jo, kuka bugin korjaa, tai jos haluat korjata sen itse, niin voit lisätä korjaajan Assignees-kohdasta."
+      value: |
+        Kirjoita tähän lyhyt kuvaus: mitä tapahtui?
+
+        #### Miten asian pitäisi toimia?
+
+
+        #### Miten bugiin pääsee? (vaiheet)
+        1.
+        2.
+        3.
+
+        #### SMART-tavoitteet korjaukselle
+        - Mitä tarkalleen pitää tehdä?
+        - Mistä tietää, että bugi on korjattu?
+        - Miten bugi vaikuttaa pelaamiseen?
+        - Mihin mennessä korjauksen olisi hyvä olla valmis?
+
+        #### Vastuunjako (RACI)
+        - Kuka korjaa bugin? (yksi tai useampi henkilö) @
+        - Kuka vastaa siitä, että bugi tulee korjatuksi? (yksi henkilö) @
+        - Keneltä voi kysyä neuvoa?
+        - Kenelle kerrotaan, miten korjaus etenee?
+    validations:
+      required: true

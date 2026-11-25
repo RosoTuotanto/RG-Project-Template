@@ -1,0 +1,77 @@
+[
+    {
+        "name": "ohjelmointi",
+        "color": "ffff54",
+        "description": "Kaikki ohjelmointiin liittyvä: koodin kehitys ja uudet ominaisuudet."
+    },
+    {
+        "name": "pelitaide",
+        "color": "00ff00",
+        "description": "Pelien visuaalinen suunnittelu ja visuaalisten assettien luonti."
+    },
+    {
+        "name": "UI & UX",
+        "color": "008000",
+        "description": "Käyttöliittymän ja käyttökokemuksen kehitys."
+    },
+    {
+        "name": "design",
+        "color": "00bfff",
+        "description": "Pelisuunnittelu, sekä muu yleinen suunnittelu."
+    },
+    {
+        "name": "narratiivi",
+        "color": "0000ff",
+        "description": "Tarinaan ja juoneen, sekä toivottuun pelikokemukseen liittyvät tehtävät."
+    },
+    {
+        "name": "kirjoittaminen",
+        "color": "000080",
+        "description": "Kaikki kirjoittamiseen liittyvät tehtävät, kuten tarina, dialogi, dokumentaatio, yms."
+    },
+    {
+        "name": "musiikki",
+        "color": "dda0dd",
+        "description": "Musiikin säveltäminen, äänittäminen, editointi, jne."
+    },
+    {
+        "name": "audio",
+        "color": "ff00ff",
+        "description": "Ääniefekteihin ja muihin audio asioihin liittyvät tehtävät."
+    },
+    {
+        "name": "uusi ominaisuus",
+        "color": "40E0D0",
+        "description": "Ideoita ja pyyntöjä uusista ominaisuuksista."
+    },
+    {
+        "name": "testaus",
+        "color": "7fffd4",
+        "description": "Pelin testaukseen liittyvät tehtävät."
+    },
+    {
+        "name": "bug",
+        "color": "8b0000",
+        "description": "Löydetyt bugit ja muut ongelmat, jotka vaativat korjausta."
+    },
+    {
+        "name": "muu",
+        "color": "ff8c00",
+        "description": "Kaikki muut tehtävät, esim. projektinhallinta."
+    },
+    {
+        "name": "kysymys",
+        "color": "8a2be2",
+        "description": "Kaikki kysymykset, joihin tarvitaan vastauksia."
+    },
+    {
+        "name": "ei tehdä",
+        "color": "d2b48c",
+        "description": "Tehtävät tai ideat, joita ei toteuteta (ainakaan vielä)."
+    },
+    {
+        "name": "dokumentaatio",
+        "color": "2f4f4f",
+        "description": "Kaikki dokumentointiin ja sen parantamiseen liittyvät tehtävät."
+    }
+]

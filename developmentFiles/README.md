@@ -1,0 +1,1 @@
+Tähän kansioon tulevat kehityksessä käytettävät lähdetiedostot, joita ei sisällytetä itse peliin, kuten kuvien ja äänien projektitiedostot. Roso Games Template tuo tänne moduuliensa dokumentaation `docs`-kansioon ja Twine-tarinatiedostonsa `story`-kansioon.

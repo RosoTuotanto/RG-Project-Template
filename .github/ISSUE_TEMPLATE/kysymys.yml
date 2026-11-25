@@ -1,0 +1,20 @@
+name: Kysymys
+description: Peliin ja sen kehitykseen liittyvät kysymykset
+labels: [kysymys]
+type: Kysymys
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Kysymys
+      description: "Kirjoita kysymyksesi omin sanoin. Kentässä valmiina olevat otsikot ovat siinä vain kirjoittamisen avuksi. Mitään niistä ei ole pakko täyttää. Voit muokata niitä tai poistaa ne kokonaan. Jos tiedät, keneltä haluat kysyä, niin voit lisätä hänet Assignees-kohdasta."
+      value: |
+        Kirjoita tähän kysymyksesi.
+
+        #### Tausta: mihin kysymys liittyy?
+
+
+        #### Keneltä haluat kysyä?
+        @
+    validations:
+      required: true

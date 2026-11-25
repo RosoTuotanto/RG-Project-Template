@@ -1,0 +1,30 @@
+name: Tehtävä
+description: Uusi tehtävä (ominaisuudet, koodaus, assetit, jne.)
+type: Tehtävä
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Tehtävän kuvaus
+      description: "Kirjoita lyhyesti, mitä pitää tehdä. Kentässä valmiina olevat otsikot ja kysymykset ovat siinä vain kirjoittamisen avuksi. Mitään niistä ei ole pakko täyttää. Voit muokata niitä tai poistaa ne kokonaan. Jos tiedät jo, kenelle tehtävä kuuluu, tai jos haluat ottaa sen itsellesi, niin voit lisätä tekijän Assignees-kohdasta."
+      value: |
+        Kirjoita tähän lyhyt kuvaus: mitä pitää tehdä?
+
+        #### SMART-tavoitteet
+        - Mitä tarkalleen pitää tehdä?
+        - Mistä tietää, että tehtävä on valmis?
+        - Miten tehtävä vie peliä eteenpäin?
+        - Mihin mennessä tehtävän olisi hyvä olla valmis?
+
+        #### Työnositus
+        1.
+        2.
+        3.
+
+        #### Vastuunjako (RACI)
+        - Kuka tekee tehtävän? (yksi tai useampi henkilö) @
+        - Kuka vastaa siitä, että tehtävä valmistuu? (yksi henkilö) @
+        - Keneltä voi kysyä neuvoa?
+        - Kenelle kerrotaan, miten tehtävä etenee?
+    validations:
+      required: true

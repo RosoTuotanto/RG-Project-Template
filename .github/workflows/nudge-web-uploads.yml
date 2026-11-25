@@ -1,0 +1,119 @@
+# Posts a comment on commits that were created via GitHub's web "Add file" button
+# (drag-drop upload or "Create new file"), nudging the contributor to use a real
+# git client. Commits made with local git tools are left alone.
+#
+# Detection:
+#   1. Committer email is noreply@github.com (web UI signal, checked by the job condition).
+#   2. Commit only adds files: every file status from the commits API is "added".
+#   3. Commit has a single parent (skips merges made via the web UI).
+#   4. Commit is not associated with a pull request (skips squash merges of
+#      pure-addition PRs, which would otherwise match all three checks above).
+#
+# Each commit gets at most one nudge: the comment starts with a marker line that a re-run
+# checks for before posting.
+
+name: Nudge web-UI file uploads
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  # Creating a commit comment requires write access to contents. Nothing in this workflow
+  # pushes; it never checks out the repository.
+  contents: write
+  pull-requests: read
+
+env:
+  DRY_RUN: 'false'  # set to 'true' to log instead of posting
+  # First line of every nudge comment; used to detect commits that already have one.
+  NUDGE_MARKER: '<!-- web-upload-nudge -->'
+
+jobs:
+  nudge:
+    # Pushes from local git end as a skipped run without starting a runner.
+    if: github.event.head_commit.committer.email == 'noreply@github.com'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check parents and file status
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eo pipefail
+          # The push payload in Actions carries no added, removed, or modified lists, so the statuses come from the commits API.
+          pages=$(gh api --paginate --slurp "/repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA")
+
+          parents=$(jq '.[0].parents | length' <<< "$pages")
+          echo "Parent count: $parents"
+          if [ "$parents" -ne 1 ]; then
+            echo "Merge or root commit, not a manual upload. Done."
+            exit 0
+          fi
+
+          file_count=$(jq '[.[].files[]] | length' <<< "$pages")
+          not_added=$(jq '[.[].files[] | select(.status != "added")] | length' <<< "$pages")
+          echo "Files: $file_count, not added: $not_added"
+          jq -r '.[].files[] | "  \(.status): \(.filename)"' <<< "$pages"
+
+          # The commits API lists at most 3000 files, so a commit at that cap cannot be confirmed as pure additions.
+          if [ "$file_count" -ge 3000 ]; then
+            echo "Too many files to confirm pure additions. Done."
+            exit 0
+          fi
+
+          if [ "$file_count" -eq 0 ] || [ "$not_added" -gt 0 ]; then
+            echo "Web UI but not pure additions. Done."
+            exit 0
+          fi
+
+          echo "match=true" >> "$GITHUB_OUTPUT"
+
+      - name: Skip pull request commits
+        id: merge_check
+        if: steps.check.outputs.match == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eo pipefail
+          pull_requests=$(gh api "/repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq 'length')
+          echo "Associated pull requests: $pull_requests"
+          if [ "$pull_requests" -gt 0 ]; then
+            echo "Commit came from a pull request merge, not a manual upload. Done."
+            exit 0
+          fi
+
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+
+      - name: Comment on commit
+        if: steps.merge_check.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AUTHOR_USERNAME: ${{ github.event.head_commit.author.username }}
+          AUTHOR_NAME: ${{ github.event.head_commit.author.name }}
+        run: |
+          set -eo pipefail
+
+          comments=$(gh api --paginate "/repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" --jq '.[].body')
+          if grep -qF "$NUDGE_MARKER" <<< "$comments"; then
+            echo "Commit already has a nudge comment. Done."
+            exit 0
+          fi
+
+          mention="${AUTHOR_USERNAME:+@$AUTHOR_USERNAME}"
+          mention="${mention:-$AUTHOR_NAME}"
+
+          body="$NUDGE_MARKER
+          $mention Hi! This commit was made with GitHub's web \"Add file\" button. That works, but for everyday work a git client such as GitHub Desktop is easier: you can change and remove files as well as add them, and you always have the whole project on your own computer. The Roso Games guide shows how: https://www.rosogames.fi/opetus/
+
+          This is only a tip. Nothing was changed, and you can ignore this comment."
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "[DRY RUN] Would post commit comment:"
+            echo "$body"
+            exit 0
+          fi
+
+          gh api --method POST \
+            "/repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" \
+            -f body="$body"

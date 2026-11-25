@@ -1,0 +1,267 @@
+# Posts an advisory Lua report as a commit comment for every pushed commit that adds or
+# changes .lua lines. The report covers only the lines the commit added or changed: luacheck
+# findings on those lines (syntax errors anywhere in the touched files) and a suggested style
+# diff for those lines from .github/apply_lua_style.py. The workflow never commits or pushes
+# anything; authors are free to ignore the comments.
+#
+# Skipped commits: merge commits (two or more parents), commits authored by bots, commits
+# with no added or changed .lua lines (pure renames and deletions), and commits that already
+# carry a report comment (re-runs and duplicate pushes stay silent).
+
+name: Lua report for pushed commits
+
+on:
+  push:
+    branches: ['**']
+    paths: ['**.lua']
+
+permissions:
+  # Creating a commit comment requires write access to contents. Nothing in this workflow
+  # pushes, and the checkout below keeps no credentials in the working copy.
+  contents: write
+
+env:
+  # ghcr.io/lunarmodules/luacheck:v1.2.0, pinned by immutable digest.
+  LUACHECK_IMAGE: ghcr.io/lunarmodules/luacheck@sha256:46601a794d24e86dda2a94d957cfba6a451db7c0f4f61f8abe04c4fcd5184e0f
+  # Library paths that get no style suggestion; must match exclude_files in .luacheckrc.
+  STYLE_SKIP_PATTERN: '(^|/)com/|(^|/)libs/spyricStoryWeaver\.lua$'
+  # First line of every report comment; used to detect commits that already have one.
+  REPORT_MARKER: '<!-- lua-report -->'
+
+jobs:
+  luaReport:
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+
+      - name: Pull luacheck Docker image
+        run: docker pull "$LUACHECK_IMAGE"
+
+      - name: Stage helper scripts
+        # The loop checks out older commits, so the scripts and linter config are used from
+        # the pushed revision via a copy that survives the checkouts.
+        run: |
+          set -eo pipefail
+          mkdir -p "$RUNNER_TEMP/lua-report"
+          cp .github/apply_lua_style.py .github/build_lua_report.py .github/changed_lines.py "$RUNNER_TEMP/lua-report/"
+          if [ -f .luacheckrc ]; then
+            cp .luacheckrc "$RUNNER_TEMP/lua-report/"
+          fi
+
+      - name: Report on each pushed commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eo pipefail
+          work="$RUNNER_TEMP/lua-report"
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          before=$(jq -r '.before' "$GITHUB_EVENT_PATH")
+          after=$(jq -r '.after' "$GITHUB_EVENT_PATH")
+          failed_commits=""
+
+          echo "## Lua report" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit | Author | Result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+
+          note() {
+            echo "| ${1:0:7} | ${2//|/\\|} | $3 |" >> "$GITHUB_STEP_SUMMARY"
+          }
+
+          # The push payload lists at most the last 20 commits. A shorter list is the whole push; a full one
+          # may be cut short, so git then finds the pushed commits: those after the old head, counted from
+          # the merge base when a force push left the old head out of the clone, or for a new branch the
+          # commits no other branch has.
+          mapfile -t shas < <(jq -r '.commits[].id' "$GITHUB_EVENT_PATH")
+
+          if [ "${#shas[@]}" -ge 20 ]; then
+            if [ "$before" = "0000000000000000000000000000000000000000" ]; then
+              mapfile -t other_branches < <(git for-each-ref --format='%(refname)' refs/remotes/origin | grep -vxF "refs/remotes/origin/$GITHUB_REF_NAME")
+              range=("$after" --not "${other_branches[@]}")
+            elif git cat-file -e "$before^{commit}" 2> /dev/null; then
+              range=("$before..$after")
+            else
+              base=$(gh api "/repos/$GITHUB_REPOSITORY/compare/$before...$after" --jq '.merge_base_commit.sha')
+              range=("$base..$after")
+            fi
+
+            pushed=$(git rev-list --reverse "${range[@]}")
+            shas=()
+
+            if [ -n "$pushed" ]; then
+              mapfile -t shas <<< "$pushed"
+            fi
+          fi
+
+          if [ "${#shas[@]}" -eq 0 ]; then
+            echo "No commits in this push. Done."
+            note "-" "-" "no commits in the push"
+            exit 0
+          fi
+
+          for sha in "${shas[@]}"; do
+            author_name=$(git log -1 --format=%an "$sha")
+
+            # The payload carries the GitHub username for the commits it lists; the commits API has it for the rest.
+            if jq -e --arg sha "$sha" 'any(.commits[]; .id == $sha)' "$GITHUB_EVENT_PATH" > /dev/null; then
+              author_username=$(jq -r --arg sha "$sha" '.commits[] | select(.id == $sha) | .author.username // ""' "$GITHUB_EVENT_PATH")
+            elif ! author_username=$(gh api "/repos/$GITHUB_REPOSITORY/commits/$sha" --jq '.author.login // ""'); then
+              echo "Could not look up the author of $sha."
+              note "$sha" "$author_name" "FAILED: author lookup"
+              failed_commits="$failed_commits $sha"
+              continue
+            fi
+
+            author_label="${author_username:-$author_name}"
+            echo "::group::Commit $sha by $author_label"
+
+            # Merge commits are skipped: they are often made by non-programmers pulling in
+            # others' work, and the changes belong to the original authors.
+            if git rev-parse -q --verify "$sha^2" > /dev/null; then
+              echo "Merge commit. Skipping."
+              note "$sha" "$author_label" "skipped: merge commit"
+              echo "::endgroup::"
+              continue
+            fi
+
+            if [[ "$author_username" == *"[bot]" ]]; then
+              echo "Bot commit. Skipping."
+              note "$sha" "$author_label" "skipped: bot"
+              echo "::endgroup::"
+              continue
+            fi
+
+            if ! python3 "$work/changed_lines.py" "$sha" "$work/changed_lines.json"; then
+              echo "changed_lines.py failed."
+              note "$sha" "$author_label" "FAILED: changed lines"
+              failed_commits="$failed_commits $sha"
+              echo "::endgroup::"
+              continue
+            fi
+
+            lua_files=()
+            while IFS= read -r -d '' file; do
+              lua_files+=("$file")
+            done < <(jq -j 'keys[] + "\u0000"' "$work/changed_lines.json")
+
+            if [ "${#lua_files[@]}" -eq 0 ]; then
+              echo "No added or changed .lua lines. Skipping."
+              note "$sha" "$author_label" "skipped: no .lua lines added or changed"
+              echo "::endgroup::"
+              continue
+            fi
+
+            existing=$(gh api --paginate "/repos/$GITHUB_REPOSITORY/commits/$sha/comments" --jq '.[].body' | grep -cF "$REPORT_MARKER" || true)
+            if [ "${existing:-0}" -gt 0 ]; then
+              echo "Commit already has a report comment. Skipping."
+              note "$sha" "$author_label" "skipped: already reported"
+              echo "::endgroup::"
+              continue
+            fi
+
+            if ! git checkout -q -f "$sha"; then
+              echo "Could not check out $sha."
+              note "$sha" "$author_label" "FAILED: checkout"
+              failed_commits="$failed_commits $sha"
+              echo "::endgroup::"
+              continue
+            fi
+
+            # Lint with the pushed revision's config regardless of the commit being analysed.
+            if [ -f "$work/.luacheckrc" ]; then
+              cp "$work/.luacheckrc" .luacheckrc
+            fi
+
+            luacheck_status=0
+            docker run --rm -v "$GITHUB_WORKSPACE:/code" -w /code "$LUACHECK_IMAGE" \
+              --no-color --codes -- "${lua_files[@]}" > "$work/luacheck_report.txt" 2>&1 || luacheck_status=$?
+
+            # Exit codes 0-2 are results (clean/warnings/syntax errors); 3+ means the tool itself failed.
+            if [ "$luacheck_status" -ge 3 ]; then
+              echo "Luacheck failed with exit code $luacheck_status:"
+              cat "$work/luacheck_report.txt"
+              note "$sha" "$author_label" "FAILED: luacheck exit $luacheck_status"
+              failed_commits="$failed_commits $sha"
+              echo "::endgroup::"
+              continue
+            fi
+
+            style_files=()
+            for file in "${lua_files[@]}"; do
+              if ! [[ "$file" =~ $STYLE_SKIP_PATTERN ]]; then
+                style_files+=("$file")
+              fi
+            done
+
+            : > "$work/style.diff"
+
+            if [ "${#style_files[@]}" -gt 0 ]; then
+              if ! python3 "$work/apply_lua_style.py" --lines-json "$work/changed_lines.json" -- "${style_files[@]}"; then
+                echo "apply_lua_style.py failed."
+                note "$sha" "$author_label" "FAILED: style script"
+                failed_commits="$failed_commits $sha"
+                echo "::endgroup::"
+                continue
+              fi
+
+              git -c core.quotePath=false diff -- "${style_files[@]}" > "$work/style.diff"
+            fi
+
+            git checkout -q -f "$sha" -- .
+
+            # Luacheck output for the whole files, for anyone following a comment's "Full log" link.
+            cat "$work/luacheck_report.txt" "$work/style.diff"
+
+            if ! report_status=$(python3 "$work/build_lua_report.py" comment \
+              --luacheck "$work/luacheck_report.txt" \
+              --diff "$work/style.diff" \
+              --changed-lines "$work/changed_lines.json" \
+              --sha "$sha" \
+              --author-username "$author_username" \
+              --author-name "$author_name" \
+              --run-url "$run_url" \
+              --blob-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$sha" \
+              --output "$work/body.md"); then
+              echo "build_lua_report.py failed."
+              note "$sha" "$author_label" "FAILED: report builder"
+              failed_commits="$failed_commits $sha"
+              echo "::endgroup::"
+              continue
+            fi
+
+            if [ "$report_status" != "content" ]; then
+              echo "Nothing to report. Staying silent."
+              note "$sha" "$author_label" "clean, no comment"
+              echo "::endgroup::"
+              continue
+            fi
+
+            jq -n --rawfile body "$work/body.md" '{body: $body}' > "$work/payload.json"
+
+            if gh api --method POST "/repos/$GITHUB_REPOSITORY/commits/$sha/comments" \
+              --input "$work/payload.json" > /dev/null; then
+              echo "Report comment posted."
+              note "$sha" "$author_label" "report comment posted"
+            else
+              echo "Posting the comment failed."
+              note "$sha" "$author_label" "FAILED: could not post comment"
+              failed_commits="$failed_commits $sha"
+            fi
+
+            echo "::endgroup::"
+          done
+
+          if [ -n "$failed_commits" ]; then
+            echo "Failed commits:$failed_commits"
+            exit 1
+          fi

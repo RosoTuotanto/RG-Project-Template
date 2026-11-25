@@ -1,0 +1,48 @@
+# Makes the repository's issue labels match .github/labels.json: missing labels are created,
+# existing ones are updated in place so issues keep them, and labels not in the file are
+# deleted. Manual only.
+
+name: Sync Labels
+
+on:
+  workflow_dispatch:
+
+jobs:
+  sync_labels:
+    runs-on: ubuntu-latest
+
+    permissions:
+      issues: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.x"
+
+      - name: Sync labels
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eo pipefail
+          log="$RUNNER_TEMP/sync-labels.log"
+
+          status=0
+          python3 .github/sync_labels.py > "$log" 2>&1 || status=$?
+
+          echo "## Sync Labels" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$status" -ne 0 ]; then
+            echo "The labels could not be synced. The message below says why; labels changed before it are already in place." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          cat "$log" >> "$GITHUB_STEP_SUMMARY"
+
+          cat "$log"
+          exit $status

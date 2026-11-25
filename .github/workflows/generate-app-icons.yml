@@ -1,0 +1,74 @@
+# Manually triggered generator that turns one committed source image into the three Solar2D icon
+# files (Icon.png, Icon-win32.ico, Icon-osx.icns) and uploads them as a downloadable artifact.
+# Nothing is committed; the participant downloads the artifact and commits the files themselves.
+
+name: Generate app icons
+
+on:
+  workflow_dispatch:
+    inputs:
+      sourceImage:
+        description: 'Repo path to the source image / Lähdekuvan polku repossa (min. 1024x1024)'
+        required: false
+        default: 'developmentFiles/images/icon-source.png'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  generateAppIcons:
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          # Pinned with Pillow below: a Python release newer than the Pillow pin's wheels makes pip build from source, which fails.
+          python-version: '3.14'
+
+      - name: Install Pillow
+        run: pip install pillow==12.2.0
+
+      - name: Generate icons
+        env:
+          # Route the user-supplied path through env so the shell never interprets it.
+          SOURCE_IMAGE: ${{ inputs.sourceImage }}
+        run: |
+          set -eo pipefail
+          out="$RUNNER_TEMP/app-icons"
+          log="$RUNNER_TEMP/icons.log"
+          mkdir -p "$out"
+
+          status=0
+          python3 .github/generate_app_icons.py "$SOURCE_IMAGE" "$out" > "$log" 2>&1 || status=$?
+
+          echo "## Generate app icons" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$status" -eq 0 ]; then
+            echo "Icons generated. Download the **app-icons** artifact at the bottom of this page, then extract the three files into your \`game/\` folder and commit them." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Icon generation failed. Fix the source image based on the message below, then run the workflow again." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat "$log" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+          cat "$log"
+          exit $status
+
+      - name: Upload icon artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-icons
+          path: |
+            ${{ runner.temp }}/app-icons/Icon.png
+            ${{ runner.temp }}/app-icons/Icon-win32.ico
+            ${{ runner.temp }}/app-icons/Icon-osx.icns
+          if-no-files-found: error

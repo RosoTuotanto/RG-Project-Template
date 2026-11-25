@@ -1,0 +1,107 @@
+# Manually triggered analysis of every .lua file in the repository. Writes a luacheck report
+# and a suggested style diff to the workflow run's summary page and uploads the full output as
+# the lua-report artifact. Nothing is committed and no comments are posted.
+
+name: Lua report for all files
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # ghcr.io/lunarmodules/luacheck:v1.2.0, pinned by immutable digest.
+  LUACHECK_IMAGE: ghcr.io/lunarmodules/luacheck@sha256:46601a794d24e86dda2a94d957cfba6a451db7c0f4f61f8abe04c4fcd5184e0f
+  # Library paths that get no style suggestion; must match exclude_files in .luacheckrc.
+  STYLE_SKIP_PATTERN: '(^|/)com/|(^|/)libs/spyricStoryWeaver\.lua$'
+
+jobs:
+  luaReportAllFiles:
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+
+      - name: Pull luacheck Docker image
+        run: docker pull "$LUACHECK_IMAGE"
+
+      - name: Analyse all .lua files
+        run: |
+          set -eo pipefail
+          work="$RUNNER_TEMP/lua-report"
+          mkdir -p "$work"
+
+          lua_files=()
+          while IFS= read -r -d '' file; do
+            lua_files+=("${file#./}")
+          done < <(find . -type f -name '*.lua' -not -path './.git/*' -print0 | sort -z)
+
+          if [ "${#lua_files[@]}" -eq 0 ]; then
+            echo "No .lua files found in the repository." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "Analysing ${#lua_files[@]} file(s)."
+
+          luacheck_status=0
+          docker run --rm -v "$GITHUB_WORKSPACE:/code" -w /code "$LUACHECK_IMAGE" \
+            --no-color --codes -- "${lua_files[@]}" > "$work/luacheck-report.txt" 2>&1 || luacheck_status=$?
+
+          # Exit codes 0-2 are results (clean/warnings/syntax errors); 3+ means the tool itself failed.
+          if [ "$luacheck_status" -ge 3 ]; then
+            echo "Luacheck failed with exit code $luacheck_status:"
+            cat "$work/luacheck-report.txt"
+            exit 1
+          fi
+
+          style_files=()
+          for file in "${lua_files[@]}"; do
+            if ! [[ "$file" =~ $STYLE_SKIP_PATTERN ]]; then
+              style_files+=("$file")
+            fi
+          done
+
+          : > "$work/style-suggestions.diff"
+
+          if [ "${#style_files[@]}" -gt 0 ]; then
+            python3 .github/apply_lua_style.py -- "${style_files[@]}"
+            git -c core.quotePath=false diff -- "${style_files[@]}" > "$work/style-suggestions.diff"
+          fi
+
+          cat "$work/luacheck-report.txt" "$work/style-suggestions.diff"
+
+          report_status=$(python3 .github/build_lua_report.py summary \
+            --luacheck "$work/luacheck-report.txt" \
+            --diff "$work/style-suggestions.diff" \
+            --title "## Lua report for all files" \
+            --output "$work/lua-report.md")
+
+          if [ "$report_status" = "content" ]; then
+            cat "$work/lua-report.md" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "The full output is also in the **lua-report** artifact at the bottom of this page." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## Lua report for all files" > "$work/lua-report.md"
+            echo "" >> "$work/lua-report.md"
+            echo "No luacheck findings and no style suggestions. All clean." >> "$work/lua-report.md"
+            cat "$work/lua-report.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: lua-report
+          path: |
+            ${{ runner.temp }}/lua-report/lua-report.md
+            ${{ runner.temp }}/lua-report/luacheck-report.txt
+            ${{ runner.temp }}/lua-report/style-suggestions.diff
+          if-no-files-found: ignore
